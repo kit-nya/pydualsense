@@ -1,3 +1,6 @@
+from collections import defaultdict
+
+
 class Event(object):
     """
     Base class for the event driven system

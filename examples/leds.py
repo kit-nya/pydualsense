@@ -1,18 +1,16 @@
-from pydualsense import pydualsense
-from pydualsense.enums import PlayerID
-import time
+from pydualsense import *
 
 # get dualsense instance
 dualsense = pydualsense()
 dualsense.init()
 # set color around touchpad to red
-dualsense.light.setColorI(255, 0, 0)
+dualsense.light.setColorI(255,0,0)
 # mute microphone
 dualsense.audio.setMicrophoneState(True)
 # set all player 1 indicator on
 dualsense.light.setPlayerID(PlayerID.PLAYER_1)
 # sleep a little to see the result on the controller
 # this is not needed in normal usage
-time.sleep(2)
+import time; time.sleep(2)
 # terminate the thread for message and close the device
 dualsense.close()
