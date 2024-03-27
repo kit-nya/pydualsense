@@ -6,7 +6,7 @@ from sys import platform
 if platform.startswith('Windows') and sys.version_info >= (3, 8):
     os.add_dll_directory(os.getcwd())
 
-import hidapi
+import hid
 from .enums import (LedOptions, PlayerID, PulseOptions, TriggerModes, Brightness, ConnectionType, BatteryState) # type: ignore
 import threading
 from .event_system import Event
@@ -103,13 +103,13 @@ class pydualsense:
         """
         initialize module and device states. Starts the sendReport background thread at the end
         """
-        self.device: hidapi.Device = self.__find_device()
+        self.device: hid.Device = self.__find_device()
         self.light = DSLight() # control led light of ds
         self.audio = DSAudio() # ds audio setting
         self.triggerL = DSTrigger() # left trigger
         self.triggerR = DSTrigger() # right trigger
         self.state = DSState() # controller states
-        self.conType = self.determineConnectionType() # determine USB or BT connection
+        # self.conType = self.determineConnectionType() # determine USB or BT connection
         self.battery = DSBattery()
         self.ds_thread = True
         self.report_thread = threading.Thread(target=self.sendReport)
@@ -129,7 +129,10 @@ class pydualsense:
         Returns:
             ConnectionType: Detected connection type of the controller.
         """
-
+        if self.device['bus_type'] == hid.BusType.USB:
+            return ConnectionType.USB
+        else:
+            return ConnectionType.BT
         dummy_report = self.device.read(100)
         input_report_length = len(dummy_report)
 
@@ -153,7 +156,7 @@ class pydualsense:
         self.report_thread.join()
         self.device.close()
 
-    def __find_device(self) -> hidapi.Device:
+    def __find_device(self) -> hid.Device:
         """
         find HID dualsense device and open it
 
@@ -170,16 +173,26 @@ class pydualsense:
             import pydualsense.hidguardian as hidguardian
             if hidguardian.check_hide():
                 raise Exception('HIDGuardian detected. Delete the controller from HIDGuardian and restart PC to connect to controller')
-        detected_device: hidapi.Device = None
-        devices = hidapi.enumerate(vendor_id=0x054c)
+        detected_device: hid.Device = None
+        devices = hid.enumerate()
         for device in devices:
-            if device.vendor_id == 0x054c and device.product_id == 0x0CE6:
+            if device['vendor_id'] == 0x054C and device['product_id'] == 0x0CE6:
                 detected_device = device
+                break
 
         if detected_device is None:
             raise Exception('No device detected')
-
-        dual_sense = hidapi.Device(vendor_id=detected_device.vendor_id, product_id=detected_device.product_id)
+        # 0x054C and device.product_id == 0x0CE6
+        if detected_device['bus_type'] == hid.BusType.USB:
+            self.conType = ConnectionType.USB
+            self.input_report_length = 64
+            self.output_report_length = 64
+        else:
+            self.conType = ConnectionType.BT
+            self.input_report_length = 78
+            self.output_report_length = 78
+            self.output_report_seq_id = 0x0
+        dual_sense = hid.Device(path=detected_device['path'])
         return dual_sense
 
     def add_checksum(self, data: list) -> list:
@@ -274,10 +287,10 @@ class pydualsense:
         Args:
             inReport (bytearray): read bytearray containing the state of the whole controller
         """
-        self.state.LX = states[1] - 127
-        self.state.LY = states[2] - 127
-        self.state.RX = states[3] - 127
-        self.state.RY = states[4] - 127
+        self.state.LX = states[1] - 128
+        self.state.LY = states[2] - 128
+        self.state.RX = states[3] - 128
+        self.state.RY = states[4] - 128
         self.state.L2 = states[5]
         self.state.R2 = states[6]
 
@@ -482,7 +495,8 @@ class pydualsense:
         # 0x10 modification of audio volume
         # 0x20 toggling of internal speaker while headset is connected
         # 0x40 modification of microphone volume
-        outReportCommon[0] = self.flag0(True, True)
+        # outReportCommon[0] = self.flag0(True, True)
+        outReportCommon[0] = 0xFF
 
         # further flags determining what changes this packet will perform
         # 0x01 toggling microphone LED
@@ -505,29 +519,29 @@ class pydualsense:
         # set Micrphone LED, setting doesnt effect microphone settings
         outReportCommon[8] = self.audio.microphone_led  # [9]
         # outReportCommon[9] Power save control? Whatever that is...
-        outReportCommon[11] = 0x10 if self.audio.microphone_mute is True else 0x00
+        outReportCommon[9] = 0x10 if self.audio.microphone_mute is True else 0x00
 
         # add right trigger mode + parameters to packet
-        outReportCommon[12] = self.triggerR.mode.value
-        outReportCommon[13] = self.triggerR.forces[0]
-        outReportCommon[14] = self.triggerR.forces[1]
-        outReportCommon[15] = self.triggerR.forces[2]
-        outReportCommon[16] = self.triggerR.forces[3]
-        outReportCommon[17] = self.triggerR.forces[4]
-        outReportCommon[18] = self.triggerR.forces[5]
-        outReportCommon[21] = self.triggerR.forces[6]
+        outReportCommon[10] = self.triggerR.mode.value
+        outReportCommon[11] = self.triggerR.forces[0]
+        outReportCommon[12] = self.triggerR.forces[1]
+        outReportCommon[13] = self.triggerR.forces[2]
+        outReportCommon[14] = self.triggerR.forces[3]
+        outReportCommon[15] = self.triggerR.forces[4]
+        outReportCommon[16] = self.triggerR.forces[5]
+        outReportCommon[19] = self.triggerR.forces[6]
 
-        outReportCommon[23] = self.triggerL.mode.value
-        outReportCommon[24] = self.triggerL.forces[0]
-        outReportCommon[25] = self.triggerL.forces[1]
-        outReportCommon[26] = self.triggerL.forces[2]
-        outReportCommon[27] = self.triggerL.forces[3]
-        outReportCommon[28] = self.triggerL.forces[4]
-        outReportCommon[29] = self.triggerL.forces[5]
-        outReportCommon[32] = self.triggerL.forces[6]
+        outReportCommon[21] = self.triggerL.mode.value
+        outReportCommon[22] = self.triggerL.forces[0]
+        outReportCommon[23] = self.triggerL.forces[1]
+        outReportCommon[24] = self.triggerL.forces[2]
+        outReportCommon[25] = self.triggerL.forces[3]
+        outReportCommon[26] = self.triggerL.forces[4]
+        outReportCommon[27] = self.triggerL.forces[5]
+        outReportCommon[30] = self.triggerL.forces[6]
 
-        outReportCommon[39] = self.flag2(True, True)
-        outReportCommon[40] = self.light.ledOption.value
+        outReportCommon[37] = self.flag2(True, True)
+        outReportCommon[38] = self.light.ledOption.value
         outReportCommon[41] = self.light.pulseOptions.value
         outReportCommon[42] = self.light.brightness.value
         outReportCommon[43] = self.light.playerNumber.value
@@ -538,7 +552,6 @@ class pydualsense:
         if self.conType == ConnectionType.BT:
             outReport[3:50] = outReportCommon
             outReport = self.add_checksum(outReport)
-
         else:
             outReport[1:48] = outReportCommon
         if self.verbose:
