@@ -79,5 +79,7 @@ Most stuff for this implementation were provided by and used from:
 
 # Coming soon
 
+- add bluetooth support
 - add multiple controllers
+- partially done
 - add documentation using sphinx
